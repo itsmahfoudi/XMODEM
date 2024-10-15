@@ -1,8 +1,9 @@
-#include "xmodem.h"
-#include "SIGMA_uart.h"  // Include the UART interface header
+#include "SIGMA_xmodem.h"
+#include "SIGMA_iflash.h"
 
-// XMODEM receive file to flash function
-XmodemStatus xmodem_receive_file_to_flash(uint32_t flash_address, uint32_t flash_size) {
+
+// XMODEM receive file function
+XmodemStatus xmodem_receive_file(void) {
     XmodemPacket packet;
     uint8_t expected_packet_number = 1;
     uint32_t bytes_received = 0;
@@ -24,7 +25,7 @@ XmodemStatus xmodem_receive_file_to_flash(uint32_t flash_address, uint32_t flash
     }
 
     // Erase flash memory at the start
-    flash_status = SIGMA_Iflash_Erase(flash_address);
+    flash_status = SIGMA_Iflash_Erase(FLASH_APP_START_ADDRESS);
     if (flash_status != HAL_OK) {
         return XMODEM_FLASH_ERROR;  // Flash erase failed
     }
@@ -37,15 +38,16 @@ XmodemStatus xmodem_receive_file_to_flash(uint32_t flash_address, uint32_t flash
             }
 
             if (packet.packet_number == expected_packet_number) {
-                uint16_t packet_size = (packet.start_byte == SOH) ? PACKET_SIZE_128 : PACKET_SIZE_1024;
+                uint32_t packet_size = (packet.start_byte == SOH) ? PACKET_SIZE_128 : PACKET_SIZE_1024;
 
                 // Ensure data fits within flash size
-                if (bytes_received + packet_size > flash_size) {
+                uint32_t app_size = FLASH_APP_END_ADDRESS - FLASH_APP_START_ADDRESS;
+                if (bytes_received + packet_size > app_size) {
                     return XMODEM_FLASH_ERROR;  // Exceeds flash size
                 }
 
                 // Write data to flash memory
-                flash_status = SIGMA_Iflash_Write(flash_address + bytes_received, packet.data, packet_size);
+                flash_status = SIGMA_Iflash_Write(FLASH_APP_START_ADDRESS + bytes_received, packet.data, packet_size);
                 if (flash_status != HAL_OK) {
                     return XMODEM_FLASH_ERROR;  // Flash write failed
                 }
@@ -54,19 +56,19 @@ XmodemStatus xmodem_receive_file_to_flash(uint32_t flash_address, uint32_t flash
                 expected_packet_number++;
                 xmodem_send_ack();  // Acknowledge successful packet reception
             } else {
-                xmodem_send_nak();  // Packet number mismatch
+                xmodem_send_nack();  // Packet number mismatch
             }
         } else {
             // Handle error status
             switch (receive_status) {
                 case XMODEM_CRC_ERROR:
-                    xmodem_send_nak();  // CRC error, request retransmission
+                    xmodem_send_nack();  // CRC error, request retransmission
                     break;
                 case XMODEM_TIMEOUT_ERROR:
-                    xmodem_send_nak();  // Timeout error
+                    xmodem_send_nack();  // Timeout error
                     break;
                 case XMODEM_PACKET_NUM_ERROR:
-                    xmodem_send_nak();  // Packet number mismatch
+                    xmodem_send_nack();  // Packet number mismatch
                     break;
                 default:
                     return XMODEM_UNKNOWN_ERROR;  // Unknown error occurred
@@ -137,8 +139,8 @@ void xmodem_send_ack(void) {
     SIGMA_Uart_Transmit_ch(ACK);
 }
 
-// Function to send NAK
-void xmodem_send_nak(void) {
-    SIGMA_Uart_Transmit_ch(NAK);
+// Function to send nack
+void xmodem_send_nack(void) {
+    SIGMA_Uart_Transmit_ch(NACK); 
 }
 
